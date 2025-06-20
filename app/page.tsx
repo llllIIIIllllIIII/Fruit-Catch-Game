@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Apple, Zap, Banana, Clock, Play, Pause, RotateCcw, Trophy } from 'lucide-react';
+import { SiBitcoin, SiEthereum, SiBinance } from 'react-icons/si';
 
 interface Fruit {
   id: number;
   x: number;
   y: number;
-  type: 'apple' | 'orange' | 'banana';
+  type: 'btc' | 'eth' | 'bnb';
   points: number;
   speed: number;
 }
@@ -28,9 +29,9 @@ interface GameState {
 }
 
 const FRUIT_TYPES = {
-  apple: { icon: Apple, points: 10, color: 'text-red-500', bgColor: 'bg-red-500' },
-  orange: { icon: Zap, points: 15, color: 'text-orange-500', bgColor: 'bg-orange-500' },
-  banana: { icon: Banana, points: 20, color: 'text-yellow-500', bgColor: 'bg-yellow-500' }
+  btc: { icon: SiBitcoin, points: 10, color: 'text-yellow-500', bgColor: 'bg-yellow-500' },
+  eth: { icon: SiEthereum, points: 15, color: 'text-blue-500', bgColor: 'bg-blue-500' },
+  bnb: { icon: SiBinance, points: 20, color: 'text-yellow-400', bgColor: 'bg-yellow-400' }
 };
 
 const GAME_CONFIG = {
@@ -448,24 +449,24 @@ export default function Home() {
                   <div className="mb-6 space-y-3">
                     <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
-                        <Apple className="w-6 h-6 text-red-500" />
-                        <span className="font-medium">Apple</span>
+                        <SiBitcoin className="w-6 h-6 text-yellow-500" />
+                        <span className="font-medium">Bitcoin (BTC)</span>
                       </div>
-                      <span className="text-red-600 font-bold">10 pts</span>
+                      <span className="text-yellow-600 font-bold">10 pts</span>
                     </div>
                     <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
-                        <Zap className="w-6 h-6 text-orange-500" />
-                        <span className="font-medium">Orange</span>
+                        <SiEthereum className="w-6 h-6 text-blue-500" />
+                        <span className="font-medium">Ethereum (ETH)</span>
                       </div>
-                      <span className="text-orange-600 font-bold">15 pts</span>
+                      <span className="text-blue-600 font-bold">15 pts</span>
                     </div>
                     <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
-                        <Banana className="w-6 h-6 text-yellow-500" />
-                        <span className="font-medium">Banana</span>
+                        <SiBinance className="w-6 h-6 text-yellow-400" />
+                        <span className="font-medium">Binance Coin (BNB)</span>
                       </div>
-                      <span className="text-yellow-600 font-bold">20 pts</span>
+                      <span className="text-yellow-500 font-bold">20 pts</span>
                     </div>
                   </div>
 
