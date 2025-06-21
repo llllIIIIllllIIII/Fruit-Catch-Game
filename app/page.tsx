@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Apple, Zap, Banana, Clock, Play, Pause, RotateCcw, Trophy } from 'lucide-react';
 import { SiBitcoin, SiEthereum, SiBinance } from 'react-icons/si';
+import { fetchCryptoPrices } from '../lib/contract';
 
 interface Fruit {
   id: number;
@@ -59,18 +60,20 @@ export default function Home() {
     width: GAME_CONFIG.playerWidth
   });
 
-  const [gameState, setGameState] = useState<GameState>({
+  const [gameState, setGameState] = useState<GameState & { maxFruits?: number }>({
     isPlaying: false,
     isPaused: false,
     score: 0,
     highScore: 0,
     timeLeft: GAME_CONFIG.gameDuration,
     level: 1,
-    gameSpeed: GAME_CONFIG.initialSpeed
+    gameSpeed: GAME_CONFIG.initialSpeed,
+    maxFruits: 4
   });
 
   const [fruits, setFruits] = useState<Fruit[]>([]);
   const [playerX, setPlayerX] = useState(GAME_CONFIG.gameWidth / 2 - GAME_CONFIG.playerWidth / 2);
+  const [cryptoPrices, setCryptoPrices] = useState<{ btc: number; eth: number; bnb: number }>({ btc: 0, eth: 0, bnb: 0 });
 
   // Load high score from localStorage after component mounts
   useEffect(() => {
@@ -81,6 +84,18 @@ export default function Home() {
         highScore: parseInt(savedHighScore, 10)
       }));
     }
+  }, []);
+
+  // Fetch crypto prices from the blockchain when the game starts
+  useEffect(() => {
+    if (gameState.isPlaying) {
+      fetchCryptoPrices().then(setCryptoPrices);
+    }
+  }, [gameState.isPlaying]);
+
+  // 進入頁面時先抓取一次幣價，確保教學面板能顯示分數
+  useEffect(() => {
+    fetchCryptoPrices().then(setCryptoPrices);
   }, []);
 
   const updateTimer = useCallback(() => {
@@ -116,31 +131,39 @@ export default function Home() {
     }
   }, [gameState.isPlaying, gameState.isPaused]);
 
+  // 調整 spawnFruit 以支援動態 maxFruits
   const spawnFruit = useCallback(() => {
     if (!gameState.isPlaying || gameState.isPaused) return;
     
     const now = Date.now();
     const spawnDelay = 800 / gameState.gameSpeed; // Faster spawning for time-based game
-    
-    if (now - lastSpawnRef.current > spawnDelay && fruitsRef.current.length < GAME_CONFIG.maxFruits) {
+    // 使用 gameState.maxFruits
+    const maxFruits = (gameState as any).maxFruits || 4;
+    if (now - lastSpawnRef.current > spawnDelay && fruitsRef.current.length < maxFruits) {
       lastSpawnRef.current = now;
       
       const fruitTypes = Object.keys(FRUIT_TYPES) as Array<keyof typeof FRUIT_TYPES>;
       const randomType = fruitTypes[Math.floor(Math.random() * fruitTypes.length)];
+      
+      // 分數綁定鏈上價格
+      let points = 0;
+      if (randomType === 'btc') points = Math.round(cryptoPrices.btc);
+      if (randomType === 'eth') points = Math.round(cryptoPrices.eth);
+      if (randomType === 'bnb') points = Math.round(cryptoPrices.bnb);
       
       const newFruit: Fruit = {
         id: now + Math.random(),
         x: Math.random() * (GAME_CONFIG.gameWidth - GAME_CONFIG.fruitSize),
         y: -GAME_CONFIG.fruitSize,
         type: randomType,
-        points: FRUIT_TYPES[randomType].points,
+        points,
         speed: gameState.gameSpeed + Math.random() * 2
       };
 
       fruitsRef.current = [...fruitsRef.current, newFruit];
       setFruits([...fruitsRef.current]);
     }
-  }, [gameState.isPlaying, gameState.isPaused, gameState.gameSpeed]);
+  }, [gameState.isPlaying, gameState.isPaused, gameState.gameSpeed, cryptoPrices, gameState]);
 
   const updateFruits = useCallback(() => {
     if (!gameState.isPlaying || gameState.isPaused) return;
@@ -201,17 +224,14 @@ export default function Home() {
       setGameState(prev => {
         const newScore = prev.score + scoreIncrease;
         const newHighScore = Math.max(prev.highScore, newScore);
-        
         if (newHighScore > prev.highScore) {
           localStorage.setItem('fruitGameHighScore', newHighScore.toString());
         }
-
         return {
           ...prev,
           score: newScore,
-          highScore: newHighScore,
-          level: Math.floor(newScore / 150) + 1,
-          gameSpeed: GAME_CONFIG.initialSpeed + Math.floor(newScore / 150) * 0.4
+          highScore: newHighScore
+          // 不再根據分數調整 gameSpeed 與 level
         };
       });
     }
@@ -243,7 +263,8 @@ export default function Home() {
       score: 0,
       timeLeft: GAME_CONFIG.gameDuration,
       level: 1,
-      gameSpeed: GAME_CONFIG.initialSpeed
+      gameSpeed: GAME_CONFIG.initialSpeed,
+      maxFruits: 4
     }));
   };
 
@@ -269,7 +290,8 @@ export default function Home() {
       score: 0,
       timeLeft: GAME_CONFIG.gameDuration,
       level: 1,
-      gameSpeed: GAME_CONFIG.initialSpeed
+      gameSpeed: GAME_CONFIG.initialSpeed,
+      maxFruits: 4
     }));
   };
 
@@ -308,6 +330,29 @@ export default function Home() {
     };
   }, [gameState.isPlaying, gameState.timeLeft]);
 
+  // 依據經過的時間自動調整速度與最大掉落數量
+  useEffect(() => {
+    if (!gameState.isPlaying) return;
+    const interval = setInterval(() => {
+      setGameState(prev => {
+        const elapsed = GAME_CONFIG.gameDuration - prev.timeLeft;
+        // 速度每20秒加快一次，前20秒最慢
+        const speedUp = Math.floor(elapsed / 20);
+        // 前20秒 maxFruits = 4，之後每20秒+4，最多不超過12
+        let maxFruits = 4;
+        if (elapsed >= 20) maxFruits = Math.min(4 + speedUp * 4, 12);
+        return {
+          ...prev,
+          gameSpeed: GAME_CONFIG.initialSpeed + speedUp * 0.5,
+          level: speedUp + 1,
+          // 用於 spawnFruit 的 maxFruits
+          maxFruits: maxFruits
+        };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [gameState.isPlaying]);
+
   // Game loop
   useEffect(() => {
     if (gameState.isPlaying && !gameState.isPaused && gameState.timeLeft > 0) {
@@ -326,10 +371,12 @@ export default function Home() {
       <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/20 max-w-6xl w-full">
         {/* Header */}
         <div className="text-center mb-6">
-          <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg">
-            🍎 Fruit Rush 🍌
+          <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg flex items-center justify-center gap-3">
+            <img src="/pepe.png" alt="left" style={{ width: 40, height: 40 }} className="inline-block align-middle" />
+            Coin Rush
+            <img src="/pepe.png" alt="right" style={{ width: 40, height: 40 }} className="inline-block align-middle" />
           </h1>
-          <p className="text-white/80 text-lg">Catch as many fruits as possible in 60 seconds!</p>
+          <p className="text-white/80 text-lg">Catch as many cryptos as possible in 60 seconds!</p>
         </div>
 
         {/* Game Stats */}
@@ -436,14 +483,14 @@ export default function Home() {
             {!gameState.isPlaying && gameState.timeLeft > 0 && (
               <div className="absolute inset-0 bg-gradient-to-br from-blue-500/80 to-purple-600/80 flex items-center justify-center backdrop-blur-sm">
                 <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-md w-full mx-4">
-                  <h2 className="text-3xl font-bold text-gray-800 mb-6">Ready for Fruit Rush?</h2>
+                  <h2 className="text-3xl font-bold text-gray-800 mb-6">Ready for AirDrop?</h2>
                   
                   <div className="mb-6 bg-blue-50 rounded-lg p-4">
                     <div className="flex items-center justify-center space-x-2 mb-3">
                       <Clock className="w-6 h-6 text-blue-600" />
                       <span className="text-xl font-bold text-blue-800">60 Second Challenge</span>
                     </div>
-                    <p className="text-gray-600 text-sm">Catch as many fruits as possible before time runs out!</p>
+                    <p className="text-gray-600 text-sm">Catch as many cryptos as possible before time runs out!</p>
                   </div>
                   
                   <div className="mb-6 space-y-3">
@@ -452,21 +499,21 @@ export default function Home() {
                         <SiBitcoin className="w-6 h-6 text-yellow-500" />
                         <span className="font-medium">Bitcoin (BTC)</span>
                       </div>
-                      <span className="text-yellow-600 font-bold">10 pts</span>
+                      <span className="text-yellow-600 font-bold">{cryptoPrices.btc ? `${Math.round(cryptoPrices.btc)} pts` : 'Loading...'}</span>
                     </div>
                     <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
                         <SiEthereum className="w-6 h-6 text-blue-500" />
                         <span className="font-medium">Ethereum (ETH)</span>
                       </div>
-                      <span className="text-blue-600 font-bold">15 pts</span>
+                      <span className="text-blue-600 font-bold">{cryptoPrices.eth ? `${Math.round(cryptoPrices.eth)} pts` : 'Loading...'}</span>
                     </div>
                     <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
                         <SiBinance className="w-6 h-6 text-yellow-400" />
                         <span className="font-medium">Binance Coin (BNB)</span>
                       </div>
-                      <span className="text-yellow-500 font-bold">20 pts</span>
+                      <span className="text-yellow-500 font-bold">{cryptoPrices.bnb ? `${Math.round(cryptoPrices.bnb)} pts` : 'Loading...'}</span>
                     </div>
                   </div>
 
