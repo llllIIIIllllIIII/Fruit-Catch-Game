@@ -597,7 +597,21 @@ export default function Home() {
                     {/* Play Again 按鈕移至畫面最下方 */}
                     <div className="absolute bottom-0 left-0 w-full flex justify-center pb-12 z-20">
                       <button
-                        onClick={startGame}
+                        onClick={() => {
+                          setSelectedMood(null);
+                          setMoodQuote(null);
+                          setGameState(prev => ({
+                            ...prev,
+                            isPlaying: false,
+                            isPaused: false,
+                            score: 0,
+                            timeLeft: GAME_CONFIG.gameDuration,
+                            level: 1,
+                            gameSpeed: GAME_CONFIG.initialSpeed,
+                            maxFruits: 4
+                          }));
+                          setBlackSwanEnded(false);
+                        }}
                         className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 text-lg"
                       >
                         Play Again
@@ -621,7 +635,20 @@ export default function Home() {
                         </div>
                       )}
                       <button
-                        onClick={() => { setSelectedMood(null); setMoodQuote(null); startGame(); }}
+                        onClick={() => {
+                          setSelectedMood(null);
+                          setMoodQuote(null);
+                          setGameState(prev => ({
+                            ...prev,
+                            isPlaying: false,
+                            isPaused: false,
+                            score: 0,
+                            timeLeft: GAME_CONFIG.gameDuration,
+                            level: 1,
+                            gameSpeed: GAME_CONFIG.initialSpeed,
+                            maxFruits: 4
+                          }));
+                        }}
                         className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 mt-4"
                       >
                         Play Again
@@ -719,7 +746,8 @@ export default function Home() {
                   {walletAddress ? (
                     <button
                       onClick={startGame}
-                      className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-8 py-4 rounded-xl font-semibold hover:from-green-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center space-x-2 w-full"
+                      disabled={!selectedMood}
+                      className={`bg-gradient-to-r from-green-500 to-blue-600 text-white px-8 py-4 rounded-xl font-semibold hover:from-green-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center space-x-2 w-full ${!selectedMood ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <Play className="w-5 h-5" />
                       <span>Start 60s Challenge</span>
