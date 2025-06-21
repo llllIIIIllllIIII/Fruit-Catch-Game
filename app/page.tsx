@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Apple, Zap, Banana, Clock, Play, Pause, RotateCcw, Trophy } from 'lucide-react';
 import { SiBitcoin, SiEthereum, SiBinance } from 'react-icons/si';
 import { fetchCryptoPrices, detectWallet, connectWallet } from '../lib/contract';
+import moodQuotes from '../public/mood_quotes.json';
 
 interface Fruit {
   id: number;
@@ -46,8 +47,16 @@ const GAME_CONFIG = {
   spawnRate: 0.02,
   maxFruits: 12,
   playerSpeed: 7,
-  gameDuration: 60 // 60 seconds
+  gameDuration: 5 // 60 seconds
 };
+
+const MOODS = [
+  { key: 'Hope', label: 'Hope', emoji: '🌟' },
+  { key: 'Regret', label: 'Regret', emoji: '🫠' },
+  { key: 'Greed', label: 'Greed', emoji: '🤑' },
+  { key: 'Loneliness', label: 'Loneliness', emoji: '🫥' },
+  { key: 'Calmness', label: 'Calmness', emoji: '😌' }
+];
 
 export default function Home() {
   const gameRef = useRef<HTMLDivElement>(null);
@@ -81,6 +90,8 @@ export default function Home() {
   const [walletConnecting, setWalletConnecting] = useState(false);
   const [showDisconnect, setShowDisconnect] = useState(false);
   const [gameOverBySwan, setGameOverBySwan] = useState(false); // 新增黑天鵝結束狀態
+  const [selectedMood, setSelectedMood] = useState<string | null>(null);
+  const [moodQuote, setMoodQuote] = useState<string | null>(null);
 
   // Load high score from localStorage after component mounts
   useEffect(() => {
@@ -416,6 +427,18 @@ export default function Home() {
     // 可選：如有額外清理邏輯可加在這裡
   };
 
+  // 心情打卡選擇後，隨機選一句名言
+  const handleMoodSelect = (mood: string) => {
+    setSelectedMood(mood);
+    const quotes = (moodQuotes as any)[mood] || [];
+    if (quotes.length > 0) {
+      const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+      setMoodQuote(randomQuote);
+    } else {
+      setMoodQuote(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-600 flex items-center justify-center p-4">
       <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/20 max-w-6xl w-full">
@@ -583,16 +606,23 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-sm w-full mx-4">
+                    <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center">
                       <h2 className="text-3xl font-bold text-gray-800 mb-4">Time's Up!</h2>
                       <p className="text-gray-600 mb-2">Final Score: <span className="font-bold text-blue-600">{gameState.score}</span></p>
                       <p className="text-gray-600 mb-2">Level Reached: <span className="font-bold text-green-600">{gameState.level}</span></p>
                       {gameState.score === gameState.highScore && gameState.score > 0 && (
                         <p className="text-yellow-600 font-bold mb-4">🎉 New High Score! 🎉</p>
                       )}
+                      {/* 遊戲結束時僅顯示名言 */}
+                      {selectedMood && moodQuote && (
+                        <div className="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded-xl shadow mb-2 animate-fade-in mt-4">
+                          <span className="text-2xl mr-2">{MOODS.find(m => m.key === selectedMood)?.emoji}</span>
+                          <span className="italic">{moodQuote}</span>
+                        </div>
+                      )}
                       <button
-                        onClick={startGame}
-                        className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                        onClick={() => { setSelectedMood(null); setMoodQuote(null); startGame(); }}
+                        className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 mt-4"
                       >
                         Play Again
                       </button>
@@ -621,44 +651,69 @@ export default function Home() {
             {/* Start Screen */}
             {!gameState.isPlaying && gameState.timeLeft > 0 && (
               <div className="absolute inset-0 bg-gradient-to-br from-blue-500/80 to-purple-600/80 flex items-center justify-center backdrop-blur-sm">
-                <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-md w-full mx-4">
+                <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-2xl w-full mx-4">
                   <h2 className="text-3xl font-bold text-gray-800 mb-6">Ready for AirDrop?</h2>
-                  
-                  <div className="mb-6 bg-blue-50 rounded-lg p-4">
-                    <div className="flex items-center justify-center space-x-2 mb-3">
-                      <Clock className="w-6 h-6 text-blue-600" />
-                      <span className="text-xl font-bold text-blue-800">60 Second Challenge</span>
-                    </div>
-                    <p className="text-gray-600 text-sm">Catch as many coins as possible before time runs out!</p>
-                  </div>
-                  
-                  <div className="mb-6 space-y-3">
-                    <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-center space-x-2">
-                        <SiBitcoin className="w-6 h-6 text-yellow-500" />
-                        <span className="font-medium">Bitcoin (BTC)</span>
+                  {/* 分成左右兩區塊，桌面版左右、手機上下 */}
+                  <div className="flex flex-col md:flex-row md:space-x-8 md:space-y-0 space-y-6 mb-6 w-full items-stretch justify-center">
+                    {/* 左：說明區塊 */}
+                    <div className="md:w-1/2 w-full flex flex-col justify-center">
+                      <div className="bg-blue-50 rounded-lg p-4 mb-4">
+                        <div className="flex items-center justify-center space-x-2 mb-3">
+                          <Clock className="w-6 h-6 text-blue-600" />
+                          <span className="text-xl font-bold text-blue-800">60 Second Challenge</span>
+                        </div>
+                        <p className="text-gray-600 text-sm">Catch as many coins as possible before time runs out!</p>
                       </div>
-                      <span className="text-yellow-600 font-bold">{cryptoPrices.btc ? `${Math.round(cryptoPrices.btc)} pts` : 'Loading...'}</span>
-                    </div>
-                    <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-center space-x-2">
-                        <SiEthereum className="w-6 h-6 text-blue-500" />
-                        <span className="font-medium">Ethereum (ETH)</span>
+                      {/* 幣種分數說明 */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                          <div className="flex items-center space-x-2">
+                            <SiBitcoin className="w-6 h-6 text-yellow-500" />
+                            <span className="font-medium">Bitcoin (BTC)</span>
+                          </div>
+                          <span className="text-yellow-600 font-bold">{cryptoPrices.btc ? `${Math.round(cryptoPrices.btc)} pts` : 'Loading...'}</span>
+                        </div>
+                        <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                          <div className="flex items-center space-x-2">
+                            <SiEthereum className="w-6 h-6 text-blue-500" />
+                            <span className="font-medium">Ethereum (ETH)</span>
+                          </div>
+                          <span className="text-blue-600 font-bold">{cryptoPrices.eth ? `${Math.round(cryptoPrices.eth)} pts` : 'Loading...'}</span>
+                        </div>
+                        <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                          <div className="flex items-center space-x-2">
+                            <SiBinance className="w-6 h-6 text-yellow-400" />
+                            <span className="font-medium">Binance Coin (BNB)</span>
+                          </div>
+                          <span className="text-yellow-500 font-bold">{cryptoPrices.bnb ? `${Math.round(cryptoPrices.bnb)} pts` : 'Loading...'}</span>
+                        </div>
                       </div>
-                      <span className="text-blue-600 font-bold">{cryptoPrices.eth ? `${Math.round(cryptoPrices.eth)} pts` : 'Loading...'}</span>
-                    </div>
-                    <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-center space-x-2">
-                        <SiBinance className="w-6 h-6 text-yellow-400" />
-                        <span className="font-medium">Binance Coin (BNB)</span>
+                      <div className="text-sm text-gray-600 mt-6">
+                        <p>Use <kbd className="bg-gray-200 px-2 py-1 rounded">←</kbd> <kbd className="bg-gray-200 px-2 py-1 rounded">→</kbd> or <kbd className="bg-gray-200 px-2 py-1 rounded">A</kbd> <kbd className="bg-gray-200 px-2 py-1 rounded">D</kbd> to move</p>
+                        <p>Press <kbd className="bg-gray-200 px-2 py-1 rounded">Space</kbd> to pause</p>
                       </div>
-                      <span className="text-yellow-500 font-bold">{cryptoPrices.bnb ? `${Math.round(cryptoPrices.bnb)} pts` : 'Loading...'}</span>
                     </div>
-                  </div>
-
-                  <div className="text-sm text-gray-600 mb-6">
-                    <p>Use <kbd className="bg-gray-200 px-2 py-1 rounded">←</kbd> <kbd className="bg-gray-200 px-2 py-1 rounded">→</kbd> or <kbd className="bg-gray-200 px-2 py-1 rounded">A</kbd> <kbd className="bg-gray-200 px-2 py-1 rounded">D</kbd> to move</p>
-                    <p>Press <kbd className="bg-gray-200 px-2 py-1 rounded">Space</kbd> to pause</p>
+                    {/* 右：心情選擇區塊 */}
+                    <div className="md:w-1/2 w-full flex flex-col justify-center">
+                      <h3 className="text-xl font-semibold text-gray-700 mb-2">How do you feel today?</h3>
+                      <div className="flex flex-wrap justify-center gap-3 mb-2">
+                        {MOODS.map(mood => (
+                          <button
+                            key={mood.key}
+                            onClick={() => handleMoodSelect(mood.key)}
+                            className={`px-4 py-2 rounded-xl border-2 font-bold text-lg flex items-center gap-2 transition-all duration-150 shadow-sm hover:scale-110 ${selectedMood === mood.key ? 'bg-gradient-to-r from-blue-400 to-purple-400 text-white border-blue-500' : 'bg-white text-gray-700 border-gray-200 hover:bg-blue-50'}`}
+                          >
+                            <span className="text-2xl">{mood.emoji}</span> {mood.label}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedMood && (
+                        <div className="text-blue-700 font-semibold mt-1 flex items-center justify-center gap-2">
+                          <span className="text-2xl">{MOODS.find(m => m.key === selectedMood)?.emoji}</span>
+                          <span>{MOODS.find(m => m.key === selectedMood)?.label}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {/* Start/Connect Wallet 按鈕 */}
                   {walletAddress ? (
