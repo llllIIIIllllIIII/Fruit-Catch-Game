@@ -9,7 +9,7 @@ interface Fruit {
   id: number;
   x: number;
   y: number;
-  type: 'btc' | 'eth' | 'bnb';
+  type: 'btc' | 'eth' | 'bnb' | 'black_swan'; // 新增 black_swan
   points: number;
   speed: number;
 }
@@ -32,7 +32,8 @@ interface GameState {
 const FRUIT_TYPES = {
   btc: { icon: SiBitcoin, points: 10, color: 'text-yellow-500', bgColor: 'bg-yellow-500' },
   eth: { icon: SiEthereum, points: 15, color: 'text-blue-500', bgColor: 'bg-blue-500' },
-  bnb: { icon: SiBinance, points: 20, color: 'text-yellow-400', bgColor: 'bg-yellow-400' }
+  bnb: { icon: SiBinance, points: 20, color: 'text-yellow-400', bgColor: 'bg-yellow-400' },
+  black_swan: { icon: null, points: 0, color: '', bgColor: '' } // 黑天鵝不顯示 icon，直接用圖片
 };
 
 const GAME_CONFIG = {
@@ -70,12 +71,16 @@ export default function Home() {
     gameSpeed: GAME_CONFIG.initialSpeed,
     maxFruits: 4
   });
+  // 黑天鵝結束狀態
+  const [blackSwanEnded, setBlackSwanEnded] = useState(false);
 
   const [fruits, setFruits] = useState<Fruit[]>([]);
   const [playerX, setPlayerX] = useState(GAME_CONFIG.gameWidth / 2 - GAME_CONFIG.playerWidth / 2);
   const [cryptoPrices, setCryptoPrices] = useState<{ btc: number; eth: number; bnb: number }>({ btc: 0, eth: 0, bnb: 0 });
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [walletConnecting, setWalletConnecting] = useState(false);
+  const [showDisconnect, setShowDisconnect] = useState(false);
+  const [gameOverBySwan, setGameOverBySwan] = useState(false); // 新增黑天鵝結束狀態
 
   // Load high score from localStorage after component mounts
   useEffect(() => {
@@ -140,26 +145,44 @@ export default function Home() {
     }
   }, [gameState.isPlaying, gameState.isPaused]);
 
-  // 調整 spawnFruit 以支援動態 maxFruits
+  // 調整 spawnFruit 以支援黑天鵝
   const spawnFruit = useCallback(() => {
     if (!gameState.isPlaying || gameState.isPaused) return;
-    
     const now = Date.now();
-    const spawnDelay = 800 / gameState.gameSpeed; // Faster spawning for time-based game
-    // 使用 gameState.maxFruits
+    const spawnDelay = 800 / gameState.gameSpeed;
     const maxFruits = (gameState as any).maxFruits || 4;
     if (now - lastSpawnRef.current > spawnDelay && fruitsRef.current.length < maxFruits) {
       lastSpawnRef.current = now;
-      
-      const fruitTypes = Object.keys(FRUIT_TYPES) as Array<keyof typeof FRUIT_TYPES>;
-      const randomType = fruitTypes[Math.floor(Math.random() * fruitTypes.length)];
-      
-      // 分數綁定鏈上價格
+      // 黑天鵝生成機率：等級2以上才有機率（最低）
+      let isBlackSwan = false;
+      if (gameState.level >= 2 && Math.random() < 0.08) {
+        isBlackSwan = true;
+      }
+      if (isBlackSwan) {
+        const newFruit: Fruit = {
+          id: now + Math.random(),
+          x: Math.random() * (GAME_CONFIG.gameWidth - GAME_CONFIG.fruitSize),
+          y: -GAME_CONFIG.fruitSize,
+          type: 'black_swan',
+          points: 0,
+          speed: gameState.gameSpeed + Math.random() * 2
+        };
+        fruitsRef.current = [...fruitsRef.current, newFruit];
+        setFruits([...fruitsRef.current]);
+        return;
+      }
+      // 權重機率：BNB > ETH > BTC
+      // 例如 BNB: 50%, ETH: 30%, BTC: 20%
+      const weightedTypes: Array<'bnb' | 'eth' | 'btc'> = [
+        'bnb','bnb','bnb','bnb','bnb', // 5
+        'eth','eth','eth',            // 3
+        'btc','btc'                   // 2
+      ];
+      const randomType = weightedTypes[Math.floor(Math.random() * weightedTypes.length)];
       let points = 0;
       if (randomType === 'btc') points = Math.round(cryptoPrices.btc);
       if (randomType === 'eth') points = Math.round(cryptoPrices.eth);
       if (randomType === 'bnb') points = Math.round(cryptoPrices.bnb);
-      
       const newFruit: Fruit = {
         id: now + Math.random(),
         x: Math.random() * (GAME_CONFIG.gameWidth - GAME_CONFIG.fruitSize),
@@ -168,7 +191,6 @@ export default function Home() {
         points,
         speed: gameState.gameSpeed + Math.random() * 2
       };
-
       fruitsRef.current = [...fruitsRef.current, newFruit];
       setFruits([...fruitsRef.current]);
     }
@@ -187,19 +209,18 @@ export default function Home() {
     setFruits([...fruitsRef.current]);
   }, [gameState.isPlaying, gameState.isPaused]);
 
+  // 調整碰撞檢查，黑天鵝直接結束
   const checkCollisions = useCallback(() => {
     if (!gameState.isPlaying || gameState.isPaused) return;
-    
     const playerRect = {
       x: playerRef.current.x,
       y: GAME_CONFIG.gameHeight - GAME_CONFIG.playerHeight - 10,
       width: GAME_CONFIG.playerWidth,
       height: GAME_CONFIG.playerHeight
     };
-
     let scoreIncrease = 0;
     const fruitsToRemove: number[] = [];
-
+    let hitBlackSwan = false;
     fruitsRef.current.forEach(fruit => {
       const fruitRect = {
         x: fruit.x,
@@ -207,7 +228,6 @@ export default function Home() {
         width: GAME_CONFIG.fruitSize,
         height: GAME_CONFIG.fruitSize
       };
-
       // Check collision with player
       if (
         playerRect.x < fruitRect.x + fruitRect.width &&
@@ -215,20 +235,26 @@ export default function Home() {
         playerRect.y < fruitRect.y + fruitRect.height &&
         playerRect.y + playerRect.height > fruitRect.y
       ) {
-        scoreIncrease += fruit.points;
-        fruitsToRemove.push(fruit.id);
-      }
-      // Remove fruits that hit the ground (no penalty in time-based mode)
-      else if (fruit.y > GAME_CONFIG.gameHeight - GAME_CONFIG.fruitSize) {
+        if (fruit.type === 'black_swan') {
+          hitBlackSwan = true;
+          fruitsToRemove.push(fruit.id);
+        } else {
+          scoreIncrease += fruit.points;
+          fruitsToRemove.push(fruit.id);
+        }
+      } else if (fruit.y > GAME_CONFIG.gameHeight - GAME_CONFIG.fruitSize) {
         fruitsToRemove.push(fruit.id);
       }
     });
-
     if (fruitsToRemove.length > 0) {
       fruitsRef.current = fruitsRef.current.filter(fruit => !fruitsToRemove.includes(fruit.id));
       setFruits([...fruitsRef.current]);
     }
-
+    if (hitBlackSwan) {
+      setGameState(prev => ({ ...prev, isPlaying: false, timeLeft: 0 }));
+      setBlackSwanEnded(true);
+      return;
+    }
     if (scoreIncrease > 0) {
       setGameState(prev => {
         const newScore = prev.score + scoreIncrease;
@@ -240,7 +266,6 @@ export default function Home() {
           ...prev,
           score: newScore,
           highScore: newHighScore
-          // 不再根據分數調整 gameSpeed 與 level
         };
       });
     }
@@ -275,6 +300,7 @@ export default function Home() {
       gameSpeed: GAME_CONFIG.initialSpeed,
       maxFruits: 4
     }));
+    setBlackSwanEnded(false);
   };
 
   const pauseGame = () => {
@@ -302,6 +328,7 @@ export default function Home() {
       gameSpeed: GAME_CONFIG.initialSpeed,
       maxFruits: 4
     }));
+    setBlackSwanEnded(false);
   };
 
   // Format time display
@@ -383,23 +410,44 @@ export default function Home() {
     setWalletConnecting(false);
   };
 
+  // 斷開錢包功能
+  const handleDisconnectWallet = () => {
+    setWalletAddress(null);
+    // 可選：如有額外清理邏輯可加在這裡
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-600 flex items-center justify-center p-4">
       <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/20 max-w-6xl w-full">
         {/* Header */}
         <div className="relative text-center mb-6">
           <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg flex items-center justify-center gap-3">
-            <img src="/pepe.png" alt="left" style={{ width: 40, height: 40 }} className="inline-block align-middle" />
-            Coin Rush
-            <img src="/pepe.png" alt="right" style={{ width: 40, height: 40 }} className="inline-block align-middle" />
+            <img src="/pepe2.png" alt="left" style={{ width: 40, height: 40 }} className="inline-block align-middle" />
+            Coin Island
+            <img src="/pepe_cry.png" alt="right" style={{ width: 40, height: 40 }} className="inline-block align-middle" />
           </h1>
-          <p className="text-white/80 text-lg">Catch as many cryptos as possible in 60 seconds!</p>
+          <p className="text-white/80 text-lg">Catch as many coin as possible in 60 seconds!</p>
           {/* Wallet Connect Button - fixed to右上角但不影響標題置中 */}
-          <div className="absolute right-0 top-1 flex items-center">
+          <div className="absolute right-0 top-1 flex items-center gap-2 z-10">
             {walletAddress ? (
-              <span className="inline-block bg-green-100 text-green-700 px-4 py-2 rounded-xl font-mono text-sm shadow">
-                Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-              </span>
+              <div className="relative">
+                <button
+                  onClick={() => setShowDisconnect((v) => !v)}
+                  className="inline-block bg-green-100 text-green-700 px-4 py-2 rounded-xl font-mono text-sm shadow hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                </button>
+                {showDisconnect && (
+                  <div className="absolute right-0 mt-2 w-32 bg-white border border-gray-200 rounded-xl shadow-lg z-20">
+                    <button
+                      onClick={() => { setShowDisconnect(false); handleDisconnectWallet(); }}
+                      className="block w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-xl"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
               <button
                 onClick={handleConnectWallet}
@@ -438,11 +486,41 @@ export default function Home() {
         {/* Game Container */}
         <div className="relative mx-auto bg-gradient-to-b from-sky-200 to-green-200 rounded-2xl overflow-hidden shadow-inner border-4 border-white/30"
              style={{ width: `${GAME_CONFIG.gameWidth}px`, height: `${GAME_CONFIG.gameHeight}px`, maxWidth: '100%' }}>
-          
+          {/* 動態背景影片，僅在遊戲進行時顯示 */}
+          {gameState.isPlaying && (
+            <video
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
+            >
+              <source src="/bg.mp4" type="video/mp4" />
+            </video>
+          )}
           {/* Game Area */}
-          <div ref={gameRef} className="relative w-full h-full">
+          <div ref={gameRef} className="relative w-full h-full z-10">
             {/* Fruits */}
             {fruits.map(fruit => {
+              if (fruit.type === 'black_swan') {
+                return (
+                  <div
+                    key={fruit.id}
+                    className="absolute"
+                    style={{
+                      left: `${fruit.x}px`,
+                      top: `${fruit.y}px`,
+                      width: `${GAME_CONFIG.fruitSize}px`,
+                      height: `${GAME_CONFIG.fruitSize}px`,
+                      transform: 'translateZ(0)',
+                      willChange: 'transform',
+                      zIndex: 20
+                    }}
+                  >
+                    <img src="/black_swan.png" alt="Black Swan" className="w-full h-full animate-bounce" />
+                  </div>
+                );
+              }
               const FruitComponent = FRUIT_TYPES[fruit.type].icon;
               return (
                 <div
@@ -478,21 +556,49 @@ export default function Home() {
 
             {/* Game Over Overlay */}
             {!gameState.isPlaying && gameState.timeLeft === 0 && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm">
-                <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-sm w-full mx-4">
-                  <h2 className="text-3xl font-bold text-gray-800 mb-4">Time's Up!</h2>
-                  <p className="text-gray-600 mb-2">Final Score: <span className="font-bold text-blue-600">{gameState.score}</span></p>
-                  <p className="text-gray-600 mb-2">Level Reached: <span className="font-bold text-green-600">{gameState.level}</span></p>
-                  {gameState.score === gameState.highScore && gameState.score > 0 && (
-                    <p className="text-yellow-600 font-bold mb-4">🎉 New High Score! 🎉</p>
-                  )}
-                  <button
-                    onClick={startGame}
-                    className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
-                  >
-                    Play Again
-                  </button>
-                </div>
+              <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm z-30">
+                {blackSwanEnded ? (
+                  <>
+                    {/* 以 lost_pepe.png 作為全螢幕背景 */}
+                    <img
+                      src="/lost_pepe.png"
+                      alt="Black Swan Ended"
+                      className="absolute inset-0 w-full h-full object-cover z-0 select-none pointer-events-none"
+                      style={{ filter: 'blur(0.5px) brightness(0.97)' }}
+                    />
+                    {/* 中央 overlay 只顯示標題與提示 */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
+                      <h2 className="text-4xl font-bold text-white drop-shadow-lg mb-4">Black Swan Event!</h2>
+                      <p className="text-white/90 text-lg mb-4 bg-black/40 px-6 py-3 rounded-xl">You hit a Black Swan!<br/>Game Over Instantly.</p>
+                    </div>
+                    {/* Play Again 按鈕移至畫面最下方 */}
+                    <div className="absolute bottom-0 left-0 w-full flex justify-center pb-12 z-20">
+                      <button
+                        onClick={startGame}
+                        className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 text-lg"
+                      >
+                        Play Again
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-white rounded-2xl p-8 text-center shadow-2xl max-w-sm w-full mx-4">
+                      <h2 className="text-3xl font-bold text-gray-800 mb-4">Time's Up!</h2>
+                      <p className="text-gray-600 mb-2">Final Score: <span className="font-bold text-blue-600">{gameState.score}</span></p>
+                      <p className="text-gray-600 mb-2">Level Reached: <span className="font-bold text-green-600">{gameState.level}</span></p>
+                      {gameState.score === gameState.highScore && gameState.score > 0 && (
+                        <p className="text-yellow-600 font-bold mb-4">🎉 New High Score! 🎉</p>
+                      )}
+                      <button
+                        onClick={startGame}
+                        className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                      >
+                        Play Again
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -523,7 +629,7 @@ export default function Home() {
                       <Clock className="w-6 h-6 text-blue-600" />
                       <span className="text-xl font-bold text-blue-800">60 Second Challenge</span>
                     </div>
-                    <p className="text-gray-600 text-sm">Catch as many cryptos as possible before time runs out!</p>
+                    <p className="text-gray-600 text-sm">Catch as many coins as possible before time runs out!</p>
                   </div>
                   
                   <div className="mb-6 space-y-3">
