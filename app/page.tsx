@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Apple, Zap, Banana, Clock, Play, Pause, RotateCcw, Trophy } from 'lucide-react';
 import { SiBitcoin, SiEthereum, SiBinance } from 'react-icons/si';
-import { fetchCryptoPrices } from '../lib/contract';
+import { fetchCryptoPrices, detectWallet, connectWallet } from '../lib/contract';
 
 interface Fruit {
   id: number;
@@ -74,6 +74,8 @@ export default function Home() {
   const [fruits, setFruits] = useState<Fruit[]>([]);
   const [playerX, setPlayerX] = useState(GAME_CONFIG.gameWidth / 2 - GAME_CONFIG.playerWidth / 2);
   const [cryptoPrices, setCryptoPrices] = useState<{ btc: number; eth: number; bnb: number }>({ btc: 0, eth: 0, bnb: 0 });
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [walletConnecting, setWalletConnecting] = useState(false);
 
   // Load high score from localStorage after component mounts
   useEffect(() => {
@@ -96,6 +98,13 @@ export default function Home() {
   // 進入頁面時先抓取一次幣價，確保教學面板能顯示分數
   useEffect(() => {
     fetchCryptoPrices().then(setCryptoPrices);
+  }, []);
+
+  // 嘗試自動偵測已連結錢包（但不自動彈窗要求連結）
+  useEffect(() => {
+    if (detectWallet() && (window as any).ethereum.selectedAddress) {
+      setWalletAddress((window as any).ethereum.selectedAddress);
+    }
   }, []);
 
   const updateTimer = useCallback(() => {
@@ -366,17 +375,41 @@ export default function Home() {
     };
   }, [gameState.isPlaying, gameState.isPaused, gameState.timeLeft, gameLoop]);
 
+  // 連結錢包流程
+  const handleConnectWallet = async () => {
+    setWalletConnecting(true);
+    const addr = await connectWallet();
+    if (addr) setWalletAddress(addr);
+    setWalletConnecting(false);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-600 flex items-center justify-center p-4">
       <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/20 max-w-6xl w-full">
         {/* Header */}
-        <div className="text-center mb-6">
+        <div className="relative text-center mb-6">
           <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg flex items-center justify-center gap-3">
             <img src="/pepe.png" alt="left" style={{ width: 40, height: 40 }} className="inline-block align-middle" />
             Coin Rush
             <img src="/pepe.png" alt="right" style={{ width: 40, height: 40 }} className="inline-block align-middle" />
           </h1>
           <p className="text-white/80 text-lg">Catch as many cryptos as possible in 60 seconds!</p>
+          {/* Wallet Connect Button - fixed to右上角但不影響標題置中 */}
+          <div className="absolute right-0 top-1 flex items-center">
+            {walletAddress ? (
+              <span className="inline-block bg-green-100 text-green-700 px-4 py-2 rounded-xl font-mono text-sm shadow">
+                Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+              </span>
+            ) : (
+              <button
+                onClick={handleConnectWallet}
+                disabled={walletConnecting}
+                className="bg-gradient-to-r from-yellow-400 to-yellow-600 text-white px-5 py-2 rounded-xl font-semibold shadow hover:from-yellow-500 hover:to-yellow-700 transition-all duration-200"
+              >
+                {walletConnecting ? 'Connecting...' : 'Connect Wallet'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Game Stats */}
@@ -521,14 +554,24 @@ export default function Home() {
                     <p>Use <kbd className="bg-gray-200 px-2 py-1 rounded">←</kbd> <kbd className="bg-gray-200 px-2 py-1 rounded">→</kbd> or <kbd className="bg-gray-200 px-2 py-1 rounded">A</kbd> <kbd className="bg-gray-200 px-2 py-1 rounded">D</kbd> to move</p>
                     <p>Press <kbd className="bg-gray-200 px-2 py-1 rounded">Space</kbd> to pause</p>
                   </div>
-
-                  <button
-                    onClick={startGame}
-                    className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-8 py-4 rounded-xl font-semibold hover:from-green-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center space-x-2 w-full"
-                  >
-                    <Play className="w-5 h-5" />
-                    <span>Start 60s Challenge</span>
-                  </button>
+                  {/* Start/Connect Wallet 按鈕 */}
+                  {walletAddress ? (
+                    <button
+                      onClick={startGame}
+                      className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-8 py-4 rounded-xl font-semibold hover:from-green-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center space-x-2 w-full"
+                    >
+                      <Play className="w-5 h-5" />
+                      <span>Start 60s Challenge</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleConnectWallet}
+                      disabled={walletConnecting}
+                      className="bg-gradient-to-r from-yellow-400 to-yellow-600 text-white px-8 py-4 rounded-xl font-semibold shadow hover:from-yellow-500 hover:to-yellow-700 transition-all duration-200 flex items-center justify-center space-x-2 w-full"
+                    >
+                      <span>{walletConnecting ? 'Connecting...' : 'Connect Wallet to Play'}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
