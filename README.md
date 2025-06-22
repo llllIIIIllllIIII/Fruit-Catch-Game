@@ -49,11 +49,28 @@ A blockchain-integrated interactive mini-game built with Next.js, TypeScript, an
 - `public/` — Static assets (e.g., images)
 
 ## Smart Contract
-- **Location:** `contract/contracts/GameScore.sol`
-- **Network:** BNB Testnet
-- **Deployed Address:** `0x9C6C9D9848f8b5D5a5104d6537f8E2f754d03682`
-- **Functions:**
-  - `getBTCPrice()`, `getETHPrice()`, `getBNBPrice()` — Fetch on-chain prices via Chainlink
+
+### Deployed Smart Contracts (BNB Testnet)
+
+- **GameScore.sol**
+  - Location: `contract/contracts/GameScore.sol`
+  - Address: `0x9C6C9D9848f8b5D5a5104d6537f8E2f754d03682`
+  - Functions: `getBTCPrice()`, `getETHPrice()`, `getBNBPrice()` — Fetch on-chain prices via Chainlink
+
+- **RewardToken.sol**
+  - Location: `contract/contracts/RewardToken.sol`
+  - Address: `0x5E6Aed02b3130d8DffB8a88475a77C4070f9Ce63`
+  - Functions: `mint(address,uint256)` (onlyOwner), standard ERC20
+
+- **GameNFT.sol**
+  - Location: `contract/contracts/GameNFT.sol`
+  - Address: `0x99484A9D8f5c31f3990733c5286921D2B8919126`
+  - Functions: `mint(address,uint32,string)` (only GameRecord), `setGameRecord(address)` (onlyOwner)
+
+- **GameRecord.sol**
+  - Location: `contract/contracts/GameRecord.sol`
+  - Address: `0x0884fACAE7A88B9CCf7120e24E2b14b5E8314AD6`
+  - Functions: `play()`, `mintTodayNFT()`, `setGameNFT()`, `setMinted()`, `withdraw()`, `bestScore(address)`
 
 ## Contribution
 Pull requests and issues are welcome! For major changes, please open an issue first to discuss what you would like to change.
