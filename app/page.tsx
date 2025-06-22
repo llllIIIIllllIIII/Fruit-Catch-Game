@@ -59,6 +59,24 @@ const MOODS = [
 ];
 
 export default function Home() {
+  // 音樂播放控制
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioStarted, setAudioStarted] = useState(false);
+
+  // 自動播放音樂（需用戶互動觸發）
+  useEffect(() => {
+    if (audioStarted && audioRef.current) {
+      audioRef.current.volume = 0.5;
+      audioRef.current.play().catch(() => {});
+    }
+  }, [audioStarted]);
+
+  // 點擊任意處啟動音樂（僅觸發一次）
+  useEffect(() => {
+    const startAudio = () => setAudioStarted(true);
+    window.addEventListener('pointerdown', startAudio, { once: true });
+    return () => window.removeEventListener('pointerdown', startAudio);
+  }, []);
   const gameRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number>();
   const lastSpawnRef = useRef<number>(0);
@@ -440,8 +458,11 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-600 flex items-center justify-center p-4">
-      <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/20 max-w-6xl w-full">
+    <>
+      {/* 背景音樂 */}
+      <audio ref={audioRef} src="/fruit_bgm.mp3" loop style={{ display: 'none' }} />
+      <div className="min-h-screen bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-600 flex items-center justify-center p-4">
+        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border border-white/20 max-w-6xl w-full">
         {/* Header */}
         <div className="relative text-center mb-6">
           <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg flex items-center justify-center gap-3">
@@ -809,7 +830,8 @@ export default function Home() {
             →
           </button>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
