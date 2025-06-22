@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Apple, Zap, Banana, Clock, Play, Pause, RotateCcw, Trophy } from 'lucide-react';
 import { SiBitcoin, SiEthereum, SiBinance } from 'react-icons/si';
-import { fetchCryptoPrices, detectWallet, connectWallet } from '../lib/contract';
+import { fetchCryptoPrices, detectWallet, connectWallet, fetchBestScore, writeGameRecord, ensureRewardTokenAllowance } from '../lib/contract';
 import moodQuotes from '../public/mood_quotes.json';
 
 interface Fruit {
@@ -47,7 +47,7 @@ const GAME_CONFIG = {
   spawnRate: 0.02,
   maxFruits: 12,
   playerSpeed: 7,
-  gameDuration: 5 // 60 seconds
+  gameDuration: 60 // 60 seconds
 };
 
 const MOODS = [
@@ -59,7 +59,63 @@ const MOODS = [
 ];
 
 export default function Home() {
-  // 音樂播放控制
+  // 先宣告所有 state（每個只宣告一次）
+  const [gameState, setGameState] = useState<GameState & { maxFruits?: number }>({
+    isPlaying: false,
+    isPaused: false,
+    score: 0,
+    highScore: 0,
+    timeLeft: GAME_CONFIG.gameDuration,
+    level: 1,
+    gameSpeed: GAME_CONFIG.initialSpeed,
+    maxFruits: 4
+  });
+  const [fruits, setFruits] = useState<Fruit[]>([]);
+  const [playerX, setPlayerX] = useState(GAME_CONFIG.gameWidth / 2 - GAME_CONFIG.playerWidth / 2);
+  const [cryptoPrices, setCryptoPrices] = useState<{ btc: number; eth: number; bnb: number }>({ btc: 0, eth: 0, bnb: 0 });
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [walletConnecting, setWalletConnecting] = useState(false);
+  const [showDisconnect, setShowDisconnect] = useState(false);
+  const [gameOverBySwan, setGameOverBySwan] = useState(false); // 新增黑天鵝結束狀態
+  const [selectedMood, setSelectedMood] = useState<string | null>(null);
+  const [moodQuote, setMoodQuote] = useState<string | null>(null);
+  const [blackSwanEnded, setBlackSwanEnded] = useState(false);
+  const [writeStatus, setWriteStatus] = useState<'idle'|'approving'|'pending'|'success'|'error'>("idle");
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [onChainBestScore, setOnChainBestScore] = useState<number | null>(null);
+
+  // 遊戲結束自動寫入鏈上
+  useEffect(() => {
+    // 寫入分數前自動 approve
+    const doWrite = async () => {
+      try {
+        setWriteStatus('approving');
+        setWriteError(null);
+        setTxHash(null);
+        // playFee: 10 * 10^18 (18 decimals)
+        const playFee = 10n * 10n ** 18n;
+        await ensureRewardTokenAllowance(playFee);
+        setWriteStatus('pending');
+        const hash = await writeGameRecord(selectedMood!, moodQuote || '', '', gameState.score);
+        setWriteStatus('success');
+        setTxHash(hash);
+        fetchBestScore(walletAddress!).then(setOnChainBestScore);
+      } catch (e: any) {
+        setWriteStatus('error');
+        setWriteError(e.message || 'Write failed');
+      }
+    };
+    if (!gameState.isPlaying && gameState.timeLeft === 0 && walletAddress && selectedMood && !blackSwanEnded && gameState.score > 0 && writeStatus === 'idle') {
+      doWrite();
+    }
+    if (gameState.isPlaying || gameState.timeLeft > 0) {
+      setWriteStatus('idle');
+      setWriteError(null);
+      setTxHash(null);
+    }
+  }, [gameState.isPlaying, gameState.timeLeft, walletAddress, selectedMood, moodQuote, gameState.score, blackSwanEnded, writeStatus]);
+  // 音樂播放控制（只宣告一次）
   const audioRef = useRef<HTMLAudioElement>(null);
   const [audioStarted, setAudioStarted] = useState(false);
 
@@ -77,6 +133,7 @@ export default function Home() {
     window.addEventListener('pointerdown', startAudio, { once: true });
     return () => window.removeEventListener('pointerdown', startAudio);
   }, []);
+  // 其他 refs 只宣告一次
   const gameRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number>();
   const lastSpawnRef = useRef<number>(0);
@@ -87,29 +144,6 @@ export default function Home() {
     x: GAME_CONFIG.gameWidth / 2 - GAME_CONFIG.playerWidth / 2,
     width: GAME_CONFIG.playerWidth
   });
-
-  const [gameState, setGameState] = useState<GameState & { maxFruits?: number }>({
-    isPlaying: false,
-    isPaused: false,
-    score: 0,
-    highScore: 0,
-    timeLeft: GAME_CONFIG.gameDuration,
-    level: 1,
-    gameSpeed: GAME_CONFIG.initialSpeed,
-    maxFruits: 4
-  });
-  // 黑天鵝結束狀態
-  const [blackSwanEnded, setBlackSwanEnded] = useState(false);
-
-  const [fruits, setFruits] = useState<Fruit[]>([]);
-  const [playerX, setPlayerX] = useState(GAME_CONFIG.gameWidth / 2 - GAME_CONFIG.playerWidth / 2);
-  const [cryptoPrices, setCryptoPrices] = useState<{ btc: number; eth: number; bnb: number }>({ btc: 0, eth: 0, bnb: 0 });
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [walletConnecting, setWalletConnecting] = useState(false);
-  const [showDisconnect, setShowDisconnect] = useState(false);
-  const [gameOverBySwan, setGameOverBySwan] = useState(false); // 新增黑天鵝結束狀態
-  const [selectedMood, setSelectedMood] = useState<string | null>(null);
-  const [moodQuote, setMoodQuote] = useState<string | null>(null);
 
   // Load high score from localStorage after component mounts
   useEffect(() => {
@@ -134,12 +168,23 @@ export default function Home() {
     fetchCryptoPrices().then(setCryptoPrices);
   }, []);
 
-  // 嘗試自動偵測已連結錢包（但不自動彈窗要求連結）
+  // 嘗試自動偵測已連結錢包（但不自動彈窗要求連結）並查詢鏈上分數
   useEffect(() => {
     if (detectWallet() && (window as any).ethereum.selectedAddress) {
-      setWalletAddress((window as any).ethereum.selectedAddress);
+      const addr = (window as any).ethereum.selectedAddress;
+      setWalletAddress(addr);
+      fetchBestScore(addr).then(setOnChainBestScore).catch(() => setOnChainBestScore(null));
     }
   }, []);
+
+  // 錢包連結後查詢鏈上分數
+  useEffect(() => {
+    if (walletAddress) {
+      fetchBestScore(walletAddress).then(setOnChainBestScore).catch(() => setOnChainBestScore(null));
+    } else {
+      setOnChainBestScore(null);
+    }
+  }, [walletAddress]);
 
   const updateTimer = useCallback(() => {
     if (!gameState.isPlaying || gameState.isPaused) return;
@@ -512,7 +557,11 @@ export default function Home() {
             </div>
             <div className="bg-white/20 rounded-lg px-4 py-2 backdrop-blur-sm flex items-center space-x-2">
               <Trophy className="w-4 h-4 text-yellow-300" />
-              <span className="text-white font-semibold">Best: {gameState.highScore}</span>
+              <span className="text-white font-semibold">Best (Local): {gameState.highScore}</span>
+            </div>
+            <div className="bg-white/20 rounded-lg px-4 py-2 backdrop-blur-sm flex items-center space-x-2">
+              <Trophy className="w-4 h-4 text-blue-400" />
+              <span className="text-white font-semibold">Best (On-chain): {onChainBestScore !== null ? onChainBestScore : '--'}</span>
             </div>
             <div className="bg-white/20 rounded-lg px-4 py-2 backdrop-blur-sm">
               <span className="text-white font-semibold">Level: {gameState.level}</span>
@@ -599,8 +648,22 @@ export default function Home() {
             />
 
             {/* Game Over Overlay */}
+
             {!gameState.isPlaying && gameState.timeLeft === 0 && (
               <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm z-30">
+                {/* 鏈上寫入狀態提示 */}
+                {writeStatus === 'approving' && (
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-yellow-100 text-yellow-800 px-4 py-2 rounded-xl shadow z-40">Approving token allowance...</div>
+                )}
+                {writeStatus === 'pending' && (
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-2 rounded-xl shadow z-40">Writing score to blockchain...</div>
+                )}
+                {writeStatus === 'success' && txHash && (
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-green-100 text-green-800 px-4 py-2 rounded-xl shadow z-40">On-chain record success! <a href={`https://testnet.bscscan.com/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="underline">View Tx</a></div>
+                )}
+                {writeStatus === 'error' && (
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-100 text-red-800 px-4 py-2 rounded-xl shadow z-40">Write failed: {writeError}</div>
+                )}
                 {blackSwanEnded ? (
                   <>
                     {/* 以 lost_pepe.png 作為全螢幕背景 */}
