@@ -26,3 +26,29 @@ export async function fetchCryptoPrices() {
     bnb: Number(bnb) / 1e8
   };
 }
+
+// 偵測是否有安裝錢包（如 MetaMask）
+export function detectWallet() {
+  if (typeof window !== 'undefined' && (window as any).ethereum) {
+    return true;
+  }
+  return false;
+}
+
+// 連結錢包，回傳使用者地址
+export async function connectWallet(): Promise<string | null> {
+  if (!detectWallet()) return null;
+  try {
+    const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+    return accounts[0] || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// 取得 signer 實例（用於需要簽名的合約互動）
+export function getSigner() {
+  if (!detectWallet()) return null;
+  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  return provider.getSigner();
+}

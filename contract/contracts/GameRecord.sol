@@ -22,10 +22,13 @@ contract GameRecord is Ownable {
         bool minted;
     }
 
+
     // address => date => Record
     mapping(address => mapping(uint32 => Record)) public records;
     // address => date => played
     mapping(address => mapping(uint32 => bool)) public played;
+    // address => best score
+    mapping(address => uint256) public bestScore;
 
     event Played(address indexed player, uint32 date, uint256 score, string mood, string quote, string dataURI);
     event Minted(address indexed player, uint32 date, uint256 tokenId);
@@ -69,7 +72,15 @@ contract GameRecord is Ownable {
         // 無論免費或付費，總是以最新一次紀錄覆蓋
         records[msg.sender][today] = Record(today, score, mood, quote, dataURI, false);
         played[msg.sender][today] = true;
+        // 更新歷史最佳分數
+        if (score > bestScore[msg.sender]) {
+            bestScore[msg.sender] = score;
+        }
         emit Played(msg.sender, today, score, mood, quote, dataURI);
+    }
+    // 查詢玩家最佳分數（可選，public mapping 也可直接查）
+    function getBestScore(address player) external view returns (uint256) {
+        return bestScore[player];
     }
 
     // 只存紀錄，不直接 mint NFT，需由前端觸發
