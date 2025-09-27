@@ -46,8 +46,8 @@ export async function fetchBestScore(address: string): Promise<number> {
 }
 import { ethers } from 'ethers';
 
-// 從環境變數取得 RPC URL
-const RPC_URL = process.env.NEXT_PUBLIC_BNB_RPC_URL!;
+// 從環境變數取得 RPC URL，如果沒有設定則使用預設的 BNB Testnet RPC
+const RPC_URL = process.env.NEXT_PUBLIC_BNB_RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545/';
 
 // BNB Testnet RPC 已改用 .env.local 管理
 // GameScore contract address
@@ -102,7 +102,7 @@ export async function connectWallet(): Promise<string | null> {
           params: [{
             chainId: '0x61',
             chainName: 'BNB Smart Chain Testnet',
-            rpcUrls: [process.env.NEXT_PUBLIC_BNB_RPC_URL],
+            rpcUrls: [process.env.NEXT_PUBLIC_BNB_RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545/'],
             nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
             blockExplorerUrls: ['https://testnet.bscscan.com'],
           }],
